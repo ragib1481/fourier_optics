@@ -1,11 +1,11 @@
 # TODO : implement transfer functions for commonly used optical components. 
 #   e.g. lens, window, aperture etc.
 
-import torch 
+import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-class RectangularAperture(torch.nn.Module):
+class RectangularAperture:
     def __init__(self, 
                  lx: float, ly: float, 
                  rx: float, ry: float,
@@ -13,25 +13,24 @@ class RectangularAperture(torch.nn.Module):
         super().__init__()
         self.lx = lx
         self.ly = ly
-        x = torch.arange(-lx/2, lx/2, lx/nx, requires_grad=False)
-        y = torch.arange(-ly/2, ly/2, ly/ny, requires_grad=False)
-        tx = torch.zeros(nx, requires_grad=False)
-        ty = torch.zeros(ny, requires_grad=False)
-        tx[torch.where((x < rx) & (x > -rx))] = 1
-        ty[torch.where((y < ry) & (y > -ry))] = 1
-        txx, tyy = torch.meshgrid(ty, tx, indexing='ij')
-        self.t = txx * tyy
+        x = jnp.arange(-lx/2, lx/2, lx/nx)
+        y = jnp.arange(-ly/2, ly/2, ly/ny)
+        tx = np.zeros(nx)
+        ty = np.zeros(ny)
+        tx[np.where((x < rx) & (x > -rx))] = 1
+        ty[np.where((y < ry) & (y > -ry))] = 1
+        txx, tyy = jnp.meshgrid(ty, tx, indexing='ij')
+        self.t = jnp.asarray(txx * tyy)
 
-    def forward(self, u: torch.Tensor):
+    def __call__(self, u: jnp.ndarray):
         return u * self.t
 
     def plot(self):
         plt.figure()
-        plt.imshow(self.t.numpy(), \
-                   extent=[-self.lx/2, self.lx/2, -self.ly/2, self.ly/2])
+        plt.imshow(self.t, extent=[-self.lx/2, self.lx/2, -self.ly/2, self.ly/2])
 
 
-class CircAperture(torch.nn.Module):
+class CircAperture:
     def __init__(self, 
                  lx: float, ly: float, 
                  r: float, 
@@ -39,23 +38,23 @@ class CircAperture(torch.nn.Module):
         super().__init__()
         self.lx = lx
         self.ly = ly
-        x = torch.arange(-lx/2, lx/2, lx/nx, requires_grad=False)
-        y = torch.arange(-ly/2, ly/2, ly/ny, requires_grad=False)
-        yy, xx = torch.meshgrid(y, x, indexing='ij')
+        x = jnp.arange(-lx/2, lx/2, lx/nx)
+        y = jnp.arange(-ly/2, ly/2, ly/ny)
+        yy, xx = jnp.meshgrid(y, x, indexing='ij')
         rrsq = yy**2 + xx**2
-        self.t = torch.zeros(ny, nx)
-        self.t[rrsq <= r**2] = 1
+        t = np.zeros((ny, nx))
+        t[rrsq <= r**2] = 1
+        self.t = jnp.asarray(t)
 
-    def forward(self, u: torch.Tensor):
+    def __call__(self, u: jnp.ndarray):
         return u * self.t
 
     def plot(self):
         plt.figure()
-        plt.imshow(self.t.numpy(), \
-                   extent=[-self.lx/2, self.lx/2, -self.ly/2, self.ly/2])
+        plt.imshow(self.t, extent=[-self.lx/2, self.lx/2, -self.ly/2, self.ly/2])
 
 
-class ThinLens(torch.nn.Module):
+class ThinLens:
     def __init__(self, 
                  lx: float, ly: float, 
                  nx: int, ny: int,
@@ -63,15 +62,15 @@ class ThinLens(torch.nn.Module):
         super().__init__()
         self.lx = lx
         self.ly = ly
-        x = torch.arange(-lx/2, lx/2, lx/nx, requires_grad=False)
-        y = torch.arange(-ly/2, ly/2, ly/ny, requires_grad=False)
-        yy, xx = torch.meshgrid(y, x, indexing='ij')
+        x = jnp.arange(-lx/2, lx/2, lx/nx)
+        y = jnp.arange(-ly/2, ly/2, ly/ny)
+        yy, xx = jnp.meshgrid(y, x, indexing='ij')
         rrsq = yy**2 + xx**2
-        k = 2 * np.pi / wl
-        self.t = torch.exp(-1j * k * rrsq / 2 / f)
+        k = 2 * jnp.pi / wl
+        self.t = jnp.exp(-1j * k * rrsq / 2 / f)
         pass
     
-    def forward(self, u: torch.Tensor):
+    def __call__(self, u: jnp.ndarray):
         return u * self.t 
 
     def plot(self):
