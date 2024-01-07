@@ -1,35 +1,57 @@
-from fopy.propagators import Fresnel
+from fopy.propagators import Fresnel 
 from fopy.components import RectangularAperture, CircAperture, ThinLens
 from fopy.units import mm, nm, um, m
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import jax.numpy as jnp
 import numpy as np
 
-nx = 250
-ny = 250
+nx = 2048 
+ny = 2048 
 # lx = 500*um
 # ly = 500*um
-lx = 0.5*m
-ly = 0.5*m
-f = 10*mm
-wl = 500*nm
-z = 2000*m
+lx = 5*mm
+ly = 5*mm
+f = 40*mm
+wl = 630*nm
+z = 20*mm
 
-for z in [1000*m, 2000*m, 4000*m, 20000*m]:
+zs = np.arange(1*nm, 80*mm, 5*mm)
+zs[1:] -= 1*nm
+# zs = np.arange(50*mm, 150*mm, 10*mm)
+img_array = np.zeros((zs.size, nx, ny))
+
+# aperture = RectangularAperture(lx, ly, 0.051*mm, 0.051*mm, nx, ny)
+aperture = CircAperture(lx, ly, 0.5*mm, nx, ny) 
+lens = ThinLens(lx, ly, nx, ny, f, wl) 
+
+for i, z in enumerate(zs):
     x = jnp.ones((ny, nx))
-    aperture = RectangularAperture(lx, ly, 0.051*m, 0.051*m, nx, ny)
-    # aperture = CircAperture(lx, ly, 0.051*m, nx, ny) 
     prop = Fresnel(lx, ly, nx, ny, z, wl)
-    lens = ThinLens(lx, ly, nx, ny, f, wl) 
-
+    
     x = aperture(x)
-    # x = lens(x)
+    x = lens(x)
     x = prop(x)
 
-    plt.figure()
-    plt.subplot(1,2,1)
-    plt.plot(jnp.abs(x)[ny//2, :])
-    plt.subplot(1,2,2)
-    plt.imshow(jnp.abs(x))
-    plt.suptitle(f"Distance z: {z}, {prop.name()}")
+    img_array[i, :, :] = jnp.abs(x)
+
+fig, ax = plt.subplots()
+im = ax.imshow(img_array[0, :, :])
+plt.axis("Off")
+
+def update(i):
+    im.set_data(img_array[i, :, :])
+    im.set_clim(vmin=img_array[i, :, :].min(), vmax=img_array[i, :, :].max())
+    ax.relim()
+    ax.set_title(f"z: {zs[i]}mm")
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+    return im,
+
+animation_fig = animation.FuncAnimation(fig, update, frames=img_array.shape[0],
+                                        interval=200, blit=True, repeat_delay=200)
+
+animation_fig.save("./results/fresnel_propagation_with_len.gif", fps=5, dpi=300)
+
 plt.show()
+

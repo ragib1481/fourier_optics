@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 class Fresnel:
     def __init__(self, 
                  lx: float, ly: float, 
@@ -36,8 +37,8 @@ class FresnelIr:
                  z: float, wl: float) -> None:
 
         super().__init__()
-        x = jnp.linspace(-lx/2, lx/2, nx)
-        y = jnp.linspace(-ly/2, ly/2, ny)
+        x = jnp.arange(-lx/2, lx/2, lx/nx)
+        y = jnp.arange(-ly/2, ly/2, ly/ny)
         yy, xx = jnp.meshgrid(y, x, indexing="ij")
         k = 2 * np.pi / wl
         h = np.exp(1j * k * z) / (1j * wl * z)
