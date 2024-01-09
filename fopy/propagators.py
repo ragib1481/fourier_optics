@@ -1,8 +1,10 @@
-# TODO:Implement fraunhoffer propagation kernel.
+# TODO: Implement fraunhoffer propagation kernel.
 # TODO: Implement adaptive sampling criterion for user convenience
+# TODO: Implement general propagation for a given ABCD matrix
 
 import jax
 import jax.numpy as jnp
+from matplotlib.cbook import index_of
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -10,21 +12,115 @@ import matplotlib.pyplot as plt
 def qphase_exp(k, a, x, y):
     return jnp.exp(1j * k/2 * a * (x**2 + y**2))
 
-# TODO: Implement this class for fresnel transfer function approach 
 class FresnelTf:
-    def __init__(self) -> None:
-        pass
+    r"""
+        Perform propagation using the transfer function approach.
+    """
+    def __init__(self, 
+                 lx: float, ly: float, 
+                 nx: int, ny: int,
+                 z: float, wl: float,
+                 mult: float = 1) -> None:
+        k = 2 * np.pi / wl
+        dx1 = lx/nx
+        dy1 = ly/ny
+        x = np.arange(-nx//2, nx//2) * dx1
+        y = np.arange(-ny//2, ny//2) * dy1
+        yy, xx = np.meshgrid(y, x, indexing='ij')
+        self.q1 = qphase_exp(k, (1-mult)/z, xx, yy) / mult
+        
+        dfx = 1/nx/dx1
+        dfy = 1/ny/dy1
+        fx = np.arange(-nx//2, nx//2) * dfx
+        fy = np.arange(-ny//2, ny//2) * dfy
+        fyy, fxx = np.meshgrid(fy, fx, indexing='ij')
+        self.q2 = qphase_exp(k, -np.pi**2*4*z/mult/k**2, fxx, fyy)
 
-    def __call__(self):
-        pass
+        dx2 = mult * dx1
+        dy2 = mult * dy1
+        x = np.arange(-nx//2, nx//2) * dx2
+        y = np.arange(-ny//2, ny//2) * dy2
+        yy, xx = np.meshgrid(y, x, indexing='ij')
+        self.q3 = qphase_exp(k, (mult-1)/mult/z, xx, yy)
 
-# TODO: Implement this class for fresnel 2 step propagator 
+    def __call__(self, u: jnp.ndarray) -> jnp.ndarray:
+        x = u * self.q1
+        x = jnp.fft.ifftshift(x)
+        x = jnp.fft.fft2(x, norm="ortho")
+        x = jnp.fft.fftshift(x)
+        x = self.q2 * x
+        x = jnp.fft.ifftshift(x)
+        x = jnp.fft.ifft2(x, norm="ortho")
+        x = jnp.fft.fftshift(x)
+        x = self.q3 * x
+        return x
+
 class Fresnel2:
-    def __init__(self) -> None:
-        pass
+    r"""
+        Class to implement 2-step fresnel propagator. It propagates the input field
+        to an intermediate field and then the field from the intermediate field to
+        the observation plane. It has the added advantage of arbitrary sampling in 
+        the observation plane.
+    """
+    def __init__(self, 
+                 lx: float, ly: float, 
+                 nx: int, ny: int,
+                 z: float, wl: float,
+                 mult: float = 1) -> None:
+        # calculate intermediate plane parameters
+        z1 = z / (1+mult)
+        z2 = z - z1
 
-    def __call__(self, u: jnp.ndarray):
-        pass
+        # calculate sampling parameters
+        dx1 = lx/nx
+        dy1 = ly/ny
+
+        dx2 = mult * dx1
+        dy2 = mult * dy1
+
+        dxi = wl * np.abs(z1) / (dx1 * nx)
+        dyi = wl * np.abs(z1) / (dy1 * ny)
+
+        k = 2 * np.pi / wl
+
+        # calculate grid in the plane 1 
+        x = np.arange(-nx//2, nx//2) * dx1
+        y = np.arange(-ny//2, ny//2) * dy1
+        yy, xx = np.meshgrid(y, x, indexing='ij')
+        self.q1 = qphase_exp(k, 1/z1, xx, yy)
+
+        # calculate grid in the intermediate plane 
+        x = np.arange(-nx//2, nx//2) * dxi
+        y = np.arange(-ny//2, ny//2) * dyi
+        yy, xx = np.meshgrid(y, x, indexing='ij')
+        self.qi1 = qphase_exp(k, 1/z1, xx, yy)
+
+        self.qi2 = qphase_exp(k, 1/z2, xx, yy)
+
+        # calculate grid in the plane 2
+        x = np.arange(-nx//2, nx//2) * dx2
+        y = np.arange(-ny//2, ny//2) * dy2
+        yy, xx = np.meshgrid(y, x, indexing='ij')
+        self.q2 = qphase_exp(k, 1/z2, xx, yy)
+
+        self.z_phase1 = jnp.exp(1j*k*z1) / (1j * wl * z1)
+        self.z_phase2 = jnp.exp(1j*k*z2) / (1j * wl * z2)
+
+    def __call__(self, u: jnp.ndarray) -> jnp.ndarray:
+        # plane 1 to plane i
+        x = self.q1 * u
+        x = jnp.fft.ifftshift(x)
+        x = jnp.fft.fft2(x, norm="ortho")
+        x = jnp.fft.fftshift(x)
+        x = self.qi1 * x
+
+        # plane i to plane 2
+        x = self.qi2 * x
+        x = jnp.fft.ifftshift(x)
+        x = jnp.fft.fft2(x, norm="ortho")
+        x = jnp.fft.fftshift(x)
+        x = self.z_phase1 * self.z_phase2 * self.q2 * x
+        return x
 
 class Fresnel:
     r"""
@@ -67,107 +163,11 @@ class Fresnel:
 
         self.z_phase = np.exp(1j*k*z) / (1j*wl*z)
 
-    def __call__(self, u1: jnp.ndarray):
+    def __call__(self, u1: jnp.ndarray) -> jnp.ndarray:
         x = self.q1 * u1
         x = jnp.fft.ifftshift(x)
         x = jnp.fft.fft2(x, norm="ortho")
         x = jnp.fft.fftshift(x)
         x = self.z_phase * self.q2 * x
         return x
-
-# class Fresnel:
-#     def __init__(self, 
-#                  lx: float, ly: float, 
-#                  nx: int, ny: int,
-#                  z: float, wl: float) -> None:
-#
-#         super().__init__()
-#         dx = lx/nx 
-#
-#         if dx >= (wl * z / lx):
-#             self.model = FresnelTf(lx, ly, nx, ny, z, wl)
-#         else:
-#             self.model = FresnelIr(lx, ly, nx, ny, z, wl)
-#
-#     def __call__(self, u: jnp.ndarray):
-#         return self.model(u)
-#
-#     def name(self):
-#         return self.model.name()
-#
-#     def plot(self):
-#         self.model.plot()
-#
-#
-# class FresnelIr:
-#     def __init__(self, 
-#                  lx: float, ly: float, 
-#                  nx: int, ny: int,
-#                  z: float, wl: float) -> None:
-#
-#         super().__init__()
-#         x = jnp.arange(-lx/2, lx/2, lx/nx)
-#         y = jnp.arange(-ly/2, ly/2, ly/ny)
-#         yy, xx = jnp.meshgrid(y, x, indexing="ij")
-#         k = 2 * np.pi / wl
-#         h = np.exp(1j * k * z) / (1j * wl * z)
-#         self.h = h * jnp.exp(1j * k / 2 / z * (xx**2 + yy**2))
-#
-#     def __call__(self, u: jnp.ndarray):
-#         x = jnp.fft.fft2(jnp.fft.ifftshift(u), norm="ortho")
-#         x = x * jnp.fft.fft2(jnp.fft.ifftshift(self.h))
-#         x = jnp.fft.ifftshift(jnp.fft.ifft2(x, norm="ortho")) 
-#         return x
-#
-#     def name(self):
-#         return "Fresnel IR propagator"
-#
-#     def plot(self):
-#         plt.figure()
-#         plt.subplot(2, 2, 1)
-#         plt.imshow(jnp.abs(self.h))
-#
-#         plt.subplot(2, 2, 3)
-#         plt.imshow(jnp.real(self.h))
-#
-#         plt.subplot(2, 2, 4)
-#         plt.imshow(jnp.imag(self.h))
-#
-#
-# class FresnelTf:
-#     def __init__(self, 
-#                  lx: float, ly: float, 
-#                  nx: int, ny: int,
-#                  z: float, wl: float) -> None:
-#
-#         super().__init__()
-#         fx = jnp.fft.fftfreq(nx, d=lx/nx)
-#         fy = jnp.fft.fftfreq(ny, d=ly/ny)
-#         fx = jnp.fft.fftshift(fx)
-#         fy = jnp.fft.fftshift(fy)
-#         fyy, fxx = jnp.meshgrid(fy, fx, indexing='ij')
-#         k = 2 * np.pi / wl
-#         self.H = jnp.exp(-1j * jnp.pi * wl * z * (fxx**2 + fyy**2))
-#         self.H = self.H * jnp.asarray(1j * k * z)
-#         self.H = jnp.fft.ifftshift(self.H)
-#
-#     def __call__(self, u: jnp.ndarray):
-#         x = jnp.fft.fft2(jnp.fft.ifftshift(u), norm="ortho")
-#         x = x * self.H
-#         x = jnp.fft.ifftshift(jnp.fft.ifft2(x, norm="ortho")) 
-#         return x
-#
-#     def name(self):
-#         return "Fresnel Tf propagator"
-#
-#     def plot(self):
-#         plt.figure()
-#         plt.subplot(2, 2, 1)
-#         plt.imshow(jnp.abs(jnp.fft.ifftshift(self.H)))
-#
-#         plt.subplot(2, 2, 3)
-#         plt.imshow(jnp.real(jnp.fft.ifftshift(self.H)))
-#
-#         plt.subplot(2, 2, 4)
-#         plt.imshow(jnp.imag(jnp.fft.ifftshift(self.H)))
 

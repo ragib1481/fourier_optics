@@ -1,6 +1,6 @@
-from fopy.propagators import Fresnel
+from fopy.propagators import Fresnel, Fresnel2, FresnelTf
 from fopy.components import RectangularAperture, CircAperture, ThinLens
-from fopy.units import mm, nm, um, m
+from fopy.units import mm, nm, um
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import jax.numpy as jnp
@@ -27,7 +27,7 @@ lens = ThinLens(lx, ly, nx, ny, f, wl)
 
 for i, z in enumerate(zs):
     x = jnp.ones((ny, nx))
-    prop = Fresnel(lx, ly, nx, ny, z, wl)
+    prop = Fresnel2(lx, ly, nx, ny, z, wl)
     
     x = aperture(x)
     x = lens(x)
@@ -49,7 +49,7 @@ def update(i):
     return im,
 
 animation_fig = animation.FuncAnimation(fig, update, frames=img_array.shape[0],
-                                        interval=200, blit=True, repeat_delay=200)
+                                        interval=500, blit=True, repeat_delay=500)
 
 # animation_fig.save("./results/fresnel_propagation_with_lens.gif", fps=5, dpi=300)
 # animation_fig.save("./results/fresnelXform_propagation_with_lens.gif", fps=5, dpi=300)
