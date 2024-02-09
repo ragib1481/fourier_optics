@@ -10,7 +10,7 @@ and aliasing artifacts.
 
 There is a small example in the main.py file to show scalar propagation. I hope to
 build an extensive simulation package for fourier optics overtime. For now a reliable 
-package for scalar light propagation simulation is [POPPY] (https://github.com/spacetelescope/poppy).
+package for scalar light propagation simulation is [POPPY](https://github.com/spacetelescope/poppy).
 
 On the other hand this is my personal project and the sole idea is to have a simulation
 package with auto-differentiation capability.
